@@ -33,6 +33,9 @@ Adafruit_MAX31865::Adafruit_MAX31865(int8_t spi_cs, int8_t spi_mosi, int8_t spi_
   _cs = spi_cs;
   _miso = spi_miso;
   _mosi = spi_mosi;
+  
+  state = MAX31865_STATE_CLEARING;
+
 
 }
 
@@ -46,16 +49,16 @@ boolean Adafruit_MAX31865::begin(max31865_numwires_t wires) {
   pinMode(_cs, OUTPUT);
   digitalWrite(_cs, HIGH);
 
-  if (_sclk != -1) {
-    //define pin modes
-    pinMode(_sclk, OUTPUT); 
-    digitalWrite(_sclk, LOW);
-    pinMode(_mosi, OUTPUT); 
-    pinMode(_miso, INPUT);
-  } else {
+//   if (_sclk != -1) {
+//     //define pin modes
+//     pinMode(_sclk, OUTPUT); 
+//     digitalWrite(_sclk, LOW);
+//     pinMode(_mosi, OUTPUT); 
+//     pinMode(_miso, INPUT);
+//   } else {
     //start and configure hardware SPI
     SPI.begin();
-  }  
+//  }  
 
   for (uint8_t i=0; i<16; i++) {
     // readRegister8(i);
@@ -112,63 +115,88 @@ void Adafruit_MAX31865::setWires(max31865_numwires_t wires ) {
   }
   writeRegister8(MAX31856_CONFIG_REG, t);
 }
-
-float  Adafruit_MAX31865::temperature(float RTDnominal, float refResistor) {
-  // http://www.analog.com/media/en/technical-documentation/application-notes/AN709_0.pdf
-
-  float Z1, Z2, Z3, Z4, Rt, temp;
-
-  Rt = readRTD();
-  Rt /= 32768;
-  Rt *= refResistor;
-  
-  // Serial.print("\nResistance: "); Serial.println(Rt, 8);
-
-  Z1 = -RTD_A;
-  Z2 = RTD_A * RTD_A - (4 * RTD_B);
-  Z3 = (4 * RTD_B) / RTDnominal;
-  Z4 = 2 * RTD_B;
-
-  temp = Z2 + (Z3 * Rt);
-  temp = (sqrt(temp) + Z1) / Z4;
-  
-  if (temp >= 0) return temp;
-
-  // ugh.
-  Rt /= RTDnominal;
-  Rt *= 100;      // normalize to 100 ohm
-
-  float rpoly = Rt;
-
-  temp = -242.02;
-  temp += 2.2228 * rpoly;
-  rpoly *= Rt;  // square
-  temp += 2.5859e-3 * rpoly;
-  rpoly *= Rt;  // ^3
-  temp -= 4.8260e-6 * rpoly;
-  rpoly *= Rt;  // ^4
-  temp -= 2.8183e-8 * rpoly;
-  rpoly *= Rt;  // ^5
-  temp += 1.5243e-10 * rpoly;
-
-  return temp;
+float MAX31865::getTemperature(){
+  return this->temperature;
 }
 
-uint16_t Adafruit_MAX31865::readRTD (void) {
-  clearFault();
-  enableBias(true);
-  delay(10);
-  uint8_t t = readRegister8(MAX31856_CONFIG_REG);
-  t |= MAX31856_CONFIG_1SHOT;      
-  writeRegister8(MAX31856_CONFIG_REG, t);
-  delay(65);
+void MAX31865::loop (void) {
+  if(state == MAX31865_STATE_CLEARING){
+    hardware->SPIswitchToRTD();
+    clearFault();
+    enableBias(true);
+    waitUntilTime = millis()+10;
+    state = MAX31865_STATE_WAITING1;
+    return;
+  }
+  else if(state == MAX31865_STATE_WAITING1){
+    if(millis() > waitUntilTime){
+			state = MAX31865_STATE_CONFIG;
+		}
+  }
+  else if(state == MAX31865_STATE_CONFIG){
+    hardware->SPIswitchToRTD();
 
-  uint16_t rtd = readRegister16(MAX31856_RTDMSB_REG);
+    uint8_t t = readRegister8(MAX31856_CONFIG_REG);
+    t |= MAX31856_CONFIG_1SHOT;
+    writeRegister8(MAX31856_CONFIG_REG, t);
+    waitUntilTime = millis()+60;
+    state = MAX31865_STATE_WAITING2;
+    return;
+  }
+  else if(state == MAX31865_STATE_WAITING2){
+    if(millis() > waitUntilTime){
+			state = MAX31865_STATE_READ;
+		}
+  }
+  else if(state == MAX31865_STATE_READ){
+    hardware->SPIswitchToRTD();
 
-  // remove fault
-  rtd >>= 1;
+    state = MAX31865_STATE_CLEARING;
+    uint16_t rtd = readRegister16(MAX31856_RTDMSB_REG);
+    // remove fault
+    rtd >>= 1;
 
-  return rtd;
+    // calculate temperature
+    float Z1, Z2, Z3, Z4, Rt, temp;
+
+    Rt = rtd;
+    Rt /= 32768;
+    Rt *= MAX31865_RREF;
+
+    Z1 = -RTD_A;
+    Z2 = RTD_A * RTD_A - (4 * RTD_B);
+    Z3 = (4 * RTD_B) / 100.0;
+    Z4 = 2 * RTD_B;
+
+    temp = Z2 + (Z3 * Rt);
+    temp = (sqrt(temp) + Z1) / Z4;
+
+    if (temp >= 0) {
+      this->temperature = temp;
+    }else{
+      // actually this should never be used, but anyway...
+      // ugh.
+      float rpoly = Rt;
+
+      temp = -242.02;
+      temp += 2.2228 * rpoly;
+      rpoly *= Rt;  // square
+      temp += 2.5859e-3 * rpoly;
+      rpoly *= Rt;  // ^3
+      temp -= 4.8260e-6 * rpoly;
+      rpoly *= Rt;  // ^4
+      temp -= 2.8183e-8 * rpoly;
+      rpoly *= Rt;  // ^5
+      temp += 1.5243e-10 * rpoly;
+
+      this->temperature = temp;
+    }
+
+
+
+    waitUntilTime = millis()+20;//80;
+    return;
+  }
 }
 
 /**********************************************/
