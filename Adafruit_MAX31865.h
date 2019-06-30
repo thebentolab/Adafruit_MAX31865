@@ -52,6 +52,12 @@
 #define MAX31865_FAULT_RTDINLOW       0x08
 #define MAX31865_FAULT_OVUV           0x04
 
+#define MAX31865_STATE_CLEARING 0
+#define MAX31865_STATE_CONFIG 1
+#define MAX31865_STATE_WAITING1 2
+#define MAX31865_STATE_WAITING2 3
+#define MAX31865_STATE_READ 4
+
 
 #define RTD_A 3.9083e-3
 #define RTD_B -5.775e-7
@@ -78,8 +84,6 @@ class Adafruit_MAX31865 {
 
   uint8_t readFault(void);
   void clearFault(void);
-  uint16_t readRTD();
-
 
   void setWires(max31865_numwires_t wires);
   void autoConvert(boolean b);
