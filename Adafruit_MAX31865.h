@@ -14,6 +14,14 @@
   BSD license, all text above must be included in any redistribution
  ****************************************************/
 
+/***************************************************
+  based on Adafruit MAX31865 library, with modifications
+  for Bento Firmware.
+  Changes: implement "temperature" methods
+  remove interrupts and integrate into loop
+  remove unnecessary code not used
+ ****************************************************/
+
 #ifndef ADAFRUIT_MAX31865_H
 #define ADAFRUIT_MAX31865_H
 
@@ -78,6 +86,9 @@ class Adafruit_MAX31865 {
   void enableBias(boolean b);
 
   float temperature(float RTDnominal, float refResistor);
+  
+  void loop();
+	float getTemperature();
 
  private:
   int8_t _sclk, _miso, _mosi, _cs;
@@ -89,6 +100,11 @@ class Adafruit_MAX31865 {
 
   void     writeRegister8(uint8_t addr, uint8_t reg);
   uint8_t spixfer(uint8_t addr);
+  
+  float temperature;
+  uint waitUntilTime = 0;
+
+  short state;
 };
 
 
